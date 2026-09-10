@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#7455b8">
+<title>Painel Admin | Kely Terapeuta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{--violet:#7455b8;--violet2:#9b86d2;--soft:#f0ebfb;--navy:#182036;--ink:#293245;--muted:#6d7483;--line:#e8e2ef;--green:#295f48;--danger:#a33c45}
+*{box-sizing:border-box}body{margin:0;font-family:'DM Sans',sans-serif;background:linear-gradient(180deg,#f8f5ff,#fbfaf7);color:var(--ink);min-height:100vh}.wrap{max-width:1180px;margin:0 auto;padding:28px 18px 60px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:22px}.brand{display:flex;align-items:center;gap:10px;color:var(--violet);font-weight:800}.dot{width:12px;height:12px;border-radius:50%;background:var(--violet);box-shadow:0 0 0 7px var(--soft)}h1,h2,h3{font-family:'Playfair Display',serif;margin:0;color:var(--violet)}h1{font-size:clamp(34px,5vw,54px)}.card{background:#fff;border:1px solid rgba(116,85,184,.13);border-radius:24px;padding:22px;box-shadow:0 18px 50px rgba(47,35,84,.08)}.login{max-width:520px;margin:8vh auto 0}.lead{color:#596173;line-height:1.6}.input{width:100%;border:1.5px solid var(--line);border-radius:14px;padding:15px 16px;font-size:16px;outline:none}.input:focus{border-color:var(--violet);box-shadow:0 0 0 4px var(--soft)}.btn{border:0;border-radius:14px;padding:14px 18px;font-weight:800;cursor:pointer}.primary{background:var(--violet);color:#fff;width:100%;margin-top:12px}.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}.error{color:var(--danger);font-size:14px;margin-top:10px}.hidden{display:none!important}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:18px 0}.count{font-weight:800;color:var(--navy)}.list{display:grid;gap:14px}.leadCard{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px}.leadHead{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.name{font-size:21px;font-weight:800;color:var(--navy)}.meta{color:var(--muted);font-size:13px;margin-top:4px}.badge{display:inline-block;padding:7px 10px;border-radius:999px;background:var(--soft);color:var(--violet);font-size:12px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.mini{background:#faf9fc;border:1px solid var(--line);border-radius:14px;padding:12px}.mini span{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}.mini strong{color:var(--navy)}.details{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}.answer{padding:10px 0;border-bottom:1px solid #f1edf5}.answer:last-child{border-bottom:0}.q{font-size:13px;color:var(--muted)}.a{font-weight:700;margin-top:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.wa{background:var(--green);color:#fff;text-decoration:none;display:inline-flex;align-items:center}.empty{text-align:center;color:var(--muted);padding:32px}.search{max-width:340px}.logout{white-space:nowrap}@media(max-width:760px){.top,.toolbar,.leadHead{align-items:stretch;flex-direction:column}.grid{grid-template-columns:1fr}.search{max-width:none}.logout{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<section id="loginView" class="card login">
+<div class="brand"><span class="dot"></span>Kely Terapeuta</div>
+<h1 style="margin-top:22px">Painel administrativo</h1>
+<p class="lead">Digite sua senha para acessar as análises preenchidas.</p>
+<input id="password" class="input" type="password" autocomplete="current-password" placeholder="Sua senha de administrador">
+<button id="loginBtn" class="btn primary">Entrar no painel</button>
+<div id="loginError" class="error"></div>
+</section>
+
+<section id="adminView" class="hidden">
+<div class="top"><div><div class="brand"><span class="dot"></span>Kely Terapeuta</div><h1 style="margin-top:12px">Análises recebidas</h1></div><button id="logoutBtn" class="btn ghost logout">Sair</button></div>
+<div class="toolbar"><div id="count" class="count">Carregando...</div><input id="search" class="input search" placeholder="Buscar por nome ou WhatsApp"></div>
+<div id="list" class="list"></div>
+</section>
+</div>
+<script>
+const questions=[
+'Quando você pensa em seus pais ou responsáveis, existem situações do passado que ainda despertam emoções fortes em você?',
+'Existe algum familiar de quem você se afastou fisicamente, mas sente que emocionalmente a relação ainda permanece muito presente?',
+'Existe algum ex-parceiro(a) ou relacionamento anterior que ainda desperta emoções ou necessidade de respostas?',
+'Você sente que alguma relação terminou na prática, mas emocionalmente ainda existem coisas que ficaram sem encerramento?',
+'Experiências anteriores influenciam sua maneira de confiar, se entregar ou se relacionar?',
+'Existe alguém que ainda ocupa seus pensamentos ou altera seu estado emocional quando é lembrado?',
+'Existe alguma situação profissional passada que ainda provoca carga emocional?',
+'Você percebe situações semelhantes se repetindo nos seus relacionamentos?',
+'Existe alguma pessoa ou situação para a qual você ainda precisa provar algo, receber desculpas, reconhecimento ou resposta?',
+'Se pudesse trabalhar hoje uma área, qual mais precisa de encerramento ou reorganização emocional?'
+];
+let password=sessionStorage.getItem('kelyAdminPassword')||'';let rows=[];
+const loginView=document.getElementById('loginView'),adminView=document.getElementById('adminView'),list=document.getElementById('list'),count=document.getElementById('count'),search=document.getElementById('search');
+function esc(s=''){return String(s).replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[m]))}
+function digits(s=''){return String(s).replace(/\D/g,'')}
+function formatDate(v){try{return new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(new Date(v))}catch(e){return v||''}}
+async function load(){const r=await fetch('/api/admin/submissions',{headers:{'x-admin-password':password}});if(r.status===401)throw new Error('Senha incorreta.');if(r.status===503)throw new Error('A senha do painel ainda não foi configurada na Hostinger.');if(!r.ok)throw new Error('Não foi possível carregar os dados.');rows=await r.json();showAdmin();render()}
+function showAdmin(){loginView.classList.add('hidden');adminView.classList.remove('hidden')}
+function render(){const term=search.value.trim().toLowerCase();const filtered=rows.filter(x=>!term||String(x.name||'').toLowerCase().includes(term)||String(x.whatsapp||'').toLowerCase().includes(term));count.textContent=`${filtered.length} análise${filtered.length===1?'':'s'} encontrada${filtered.length===1?'':'s'}`;if(!filtered.length){list.innerHTML='<div class="card empty">Nenhuma análise encontrada.</div>';return}list.innerHTML=filtered.map(x=>{const ans=Array.isArray(x.answers)?x.answers:[];const wa=digits(x.whatsapp);return `<article class="leadCard"><div class="leadHead"><div><div class="name">${esc(x.name)}</div><div class="meta">${formatDate(x.createdAt)}</div></div><span class="badge">${esc(x.classification||'')}</span></div><div class="grid"><div class="mini"><span>WhatsApp</span><strong>${esc(x.whatsapp||'Não informado')}</strong></div><div class="mini"><span>Área escolhida</span><strong>${esc(x.area||'')}</strong></div><div class="mini"><span>Pontuação</span><strong>${Number(x.score||0)}</strong></div></div><div class="details"><h3 style="font-size:20px">Respostas</h3>${ans.map((a,i)=>`<div class="answer"><div class="q">${i+1}. ${esc(questions[i]||'Pergunta')}</div><div class="a">${esc(a?.label||'')}</div></div>`).join('')}</div>${wa?`<div class="actions"><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/55${wa.startsWith('55')?wa.slice(2):wa}">Chamar no WhatsApp</a></div>`:''}</article>`}).join('')}
+document.getElementById('loginBtn').onclick=async()=>{password=document.getElementById('password').value;document.getElementById('loginError').textContent='';try{await load();sessionStorage.setItem('kelyAdminPassword',password)}catch(e){document.getElementById('loginError').textContent=e.message}};
+document.getElementById('password').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click()});
+document.getElementById('logoutBtn').onclick=()=>{sessionStorage.removeItem('kelyAdminPassword');password='';location.reload()};search.oninput=render;if(password)load().catch(()=>{sessionStorage.removeItem('kelyAdminPassword')});
+</script>
+</body>
+</html>
