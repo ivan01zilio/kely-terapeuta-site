@@ -18,6 +18,88 @@ if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '[]', 'utf8');
 
 app.use(express.json({ limit: '1mb' }));
 
+function readLocalRows() {
+  try {
+    return JSON.parse(fs.readFileSync(dataFile, 'utf8') || '[]');
+  } catch (err) {
+    console.error('Local: erro ao ler submissions.json', err);
+    return [];
+  }
+}
+
+function writeLocalRows(rows) {
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify(rows, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.error('Local: erro ao salvar submissions.json', err);
+    return false;
+  }
+}
+
+async function sendGoogleSheets(item) {
+  const webhook = process.env.GOOGLE_SHEETS_WEBHOOK;
+  const secret = process.env.GOOGLE_SHEETS_SECRET;
+
+  if (!webhook || !secret) {
+    console.log('Google Sheets: envio ignorado porque GOOGLE_SHEETS_WEBHOOK ou GOOGLE_SHEETS_SECRET nao foi configurado.');
+    return false;
+  }
+
+  const payload = {
+    secret,
+    action: 'append',
+    id: item.id,
+    createdAt: item.createdAt,
+    name: item.name,
+    whatsapp: item.whatsapp,
+    consent: item.consent,
+    answers: item.answers,
+    score: item.score,
+    classification: item.classification,
+    area: item.area
+  };
+
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    redirect: 'follow'
+  });
+
+  const text = await response.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (_) {}
+
+  if (!response.ok || (data && data.ok === false)) {
+    throw new Error(`Google Sheets retornou ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  console.log('Google Sheets: lead salvo com sucesso:', item.id);
+  return true;
+}
+
+async function loadGoogleSheetsRows() {
+  const webhook = process.env.GOOGLE_SHEETS_WEBHOOK;
+  const secret = process.env.GOOGLE_SHEETS_SECRET;
+  if (!webhook || !secret) return null;
+
+  const url = new URL(webhook);
+  url.searchParams.set('action', 'list');
+  url.searchParams.set('secret', secret);
+
+  const response = await fetch(url, { method: 'GET', redirect: 'follow' });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Google Sheets leitura HTTP ${response.status}: ${text.slice(0, 300)}`);
+
+  let data;
+  try { data = JSON.parse(text); } catch (_) { throw new Error('Google Sheets leitura: resposta nao e JSON'); }
+
+  const rows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : null);
+  if (!rows) throw new Error('Google Sheets leitura: formato de resposta invalido');
+  return rows;
+}
+
 async function sendWhatsAppNotification(item) {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -41,18 +123,16 @@ async function sendWhatsAppNotification(item) {
       template: {
         name: templateName,
         language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'pt_BR' },
-        components: [
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: String(item.name || 'Novo contato') },
-              { type: 'text', text: String(item.whatsapp || 'Nao informado') },
-              { type: 'text', text: String(item.area || 'Nao informada') },
-              { type: 'text', text: String(item.classification || 'Nao informada') },
-              { type: 'text', text: adminUrl }
-            ]
-          }
-        ]
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: String(item.name || 'Novo contato') },
+            { type: 'text', text: String(item.whatsapp || 'Nao informado') },
+            { type: 'text', text: String(item.area || 'Nao informada') },
+            { type: 'text', text: String(item.classification || 'Nao informada') },
+            { type: 'text', text: adminUrl }
+          ]
+        }]
       }
     };
   } else {
@@ -179,13 +259,13 @@ app.get(['/', '/analise', '/analise/'], (req, res) => renderSite(res));
 app.get(['/admin', '/admin/'], (req, res) => res.sendFile(adminFile));
 app.use(express.static(publicDir, { index: false }));
 
-app.post('/api/submissions', (req, res) => {
+app.post('/api/submissions', async (req, res) => {
   try {
     const body = req.body || {};
     if (!body.name || !Array.isArray(body.answers) || !body.classification || !body.area) {
       return res.status(400).json({ ok: false, error: 'Dados incompletos' });
     }
-    const rows = JSON.parse(fs.readFileSync(dataFile, 'utf8') || '[]');
+
     const item = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       createdAt: new Date().toISOString(),
@@ -197,24 +277,45 @@ app.post('/api/submissions', (req, res) => {
       classification: String(body.classification).slice(0, 80),
       area: String(body.area).slice(0, 140)
     };
+
+    const rows = readLocalRows();
     rows.push(item);
-    fs.writeFileSync(dataFile, JSON.stringify(rows, null, 2), 'utf8');
+    const localSaved = writeLocalRows(rows);
+
+    let sheetsSaved = false;
+    try {
+      sheetsSaved = await sendGoogleSheets(item);
+    } catch (err) {
+      console.error('Google Sheets: falha ao salvar lead', err);
+    }
 
     sendWhatsAppNotification(item).catch(err => console.error('WhatsApp: falha inesperada', err));
 
-    res.json({ ok: true, id: item.id });
+    console.log(`Lead recebido: ${item.id} | local=${localSaved} | sheets=${sheetsSaved}`);
+    res.json({ ok: true, id: item.id, localSaved, sheetsSaved });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Não foi possível salvar a análise.' });
   }
 });
 
-app.get('/api/admin/submissions', (req, res) => {
+app.get('/api/admin/submissions', async (req, res) => {
   const configured = process.env.ADMIN_PASSWORD;
   if (!configured) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD não configurada' });
   if (req.get('x-admin-password') !== configured) return res.status(401).json({ ok: false, error: 'Não autorizado' });
+
   try {
-    const rows = JSON.parse(fs.readFileSync(dataFile, 'utf8') || '[]');
+    let rows = null;
+
+    try {
+      rows = await loadGoogleSheetsRows();
+      if (rows) console.log(`Google Sheets: ${rows.length} leads carregados para o painel.`);
+    } catch (err) {
+      console.error('Google Sheets: nao foi possivel carregar o painel; usando cache local.', err.message);
+    }
+
+    if (!rows) rows = readLocalRows();
+
     rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     res.set('Cache-Control', 'no-store');
     res.json(rows);
