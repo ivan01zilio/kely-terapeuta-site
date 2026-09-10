@@ -87,6 +87,7 @@ async function sendWhatsAppNotification(item) {
 
 function renderSite(res) {
   let html = fs.readFileSync(indexFile, 'utf8');
+  html = html.replace('/Deixo%20Ir.mp3', '/Hoje%20Eu%20Escolho%20a%20Mim.mp3');
   const uiFixes = `
     .sound{display:none!important}
     .consent{display:none!important}
@@ -199,7 +200,6 @@ app.post('/api/submissions', (req, res) => {
     rows.push(item);
     fs.writeFileSync(dataFile, JSON.stringify(rows, null, 2), 'utf8');
 
-    // Nao atrasa a resposta ao cliente: a notificacao segue em paralelo.
     sendWhatsAppNotification(item).catch(err => console.error('WhatsApp: falha inesperada', err));
 
     res.json({ ok: true, id: item.id });
