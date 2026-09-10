@@ -18,6 +18,73 @@ if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '[]', 'utf8');
 
 app.use(express.json({ limit: '1mb' }));
 
+async function sendWhatsAppNotification(item) {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const to = String(process.env.WHATSAPP_NOTIFY_TO || '5547996024629').replace(/\D/g, '');
+  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v23.0';
+  const templateName = process.env.WHATSAPP_TEMPLATE_NAME;
+
+  if (!token || !phoneNumberId || !to) {
+    console.log('WhatsApp: notificacao ignorada porque as variaveis ainda nao foram configuradas.');
+    return;
+  }
+
+  const adminUrl = 'https://kelyterapeuta.online/admin';
+  let payload;
+
+  if (templateName) {
+    payload = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'pt_BR' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: String(item.name || 'Novo contato') },
+              { type: 'text', text: String(item.whatsapp || 'Nao informado') },
+              { type: 'text', text: String(item.area || 'Nao informada') },
+              { type: 'text', text: String(item.classification || 'Nao informada') },
+              { type: 'text', text: adminUrl }
+            ]
+          }
+        ]
+      }
+    };
+  } else {
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body: `🔔 Nova análise recebida\n\nNome: ${item.name}\nWhatsApp: ${item.whatsapp || 'Não informado'}\nÁrea: ${item.area}\nResultado: ${item.classification}\n\nVer respostas: ${adminUrl}`
+      }
+    };
+  }
+
+  const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('WhatsApp: erro no envio', response.status, JSON.stringify(data));
+    return;
+  }
+  console.log('WhatsApp: notificacao enviada com sucesso.', JSON.stringify(data));
+}
+
 function renderSite(res) {
   let html = fs.readFileSync(indexFile, 'utf8');
   const uiFixes = `
@@ -131,6 +198,10 @@ app.post('/api/submissions', (req, res) => {
     };
     rows.push(item);
     fs.writeFileSync(dataFile, JSON.stringify(rows, null, 2), 'utf8');
+
+    // Nao atrasa a resposta ao cliente: a notificacao segue em paralelo.
+    sendWhatsAppNotification(item).catch(err => console.error('WhatsApp: falha inesperada', err));
+
     res.json({ ok: true, id: item.id });
   } catch (err) {
     console.error(err);
