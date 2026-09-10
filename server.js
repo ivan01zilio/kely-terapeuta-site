@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
+const publicDir = path.join(__dirname, 'public');
+const indexFile = path.join(publicDir, 'index.html');
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'submissions.json');
 
@@ -14,7 +16,19 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '[]', 'utf8');
 
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Entrega a experiência com pequenos ajustes de interface sem alterar os assets.
+function renderSite(res) {
+  let html = fs.readFileSync(indexFile, 'utf8');
+  html = html.replace('</style>', '.sound{display:none!important}.consent{display:none!important}</style>');
+  html = html.replace(/<label class="consent"><input type="checkbox" id="consent"><span>.*?<\/span><\/label>/s, '');
+  html = html.replace("if(!document.getElementById('consent').checked){document.getElementById('waErr').textContent='Marque a autorização para receber contato.';return}", '');
+  html = html.replace('Concordo e quero continuar', 'Concordo e quero compartilhar');
+  res.type('html').send(html);
+}
+
+app.get(['/', '/analise', '/analise/'], (req, res) => renderSite(res));
+app.use(express.static(publicDir, { index: false }));
 
 app.post('/api/submissions', (req, res) => {
   try {
@@ -43,5 +57,5 @@ app.post('/api/submissions', (req, res) => {
   }
 });
 
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*', (req, res) => renderSite(res));
 app.listen(PORT, () => console.log(`Kely Terapeuta online na porta ${PORT}`));
