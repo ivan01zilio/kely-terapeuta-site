@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
 const indexFile = path.join(publicDir, 'index.html');
+const adminFile = path.join(publicDir, 'admin.html');
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'submissions.json');
 
@@ -66,6 +67,7 @@ function renderSite(res) {
 }
 
 app.get(['/', '/analise', '/analise/'], (req, res) => renderSite(res));
+app.get(['/admin', '/admin/'], (req, res) => res.sendFile(adminFile));
 app.use(express.static(publicDir, { index: false }));
 
 app.post('/api/submissions', (req, res) => {
@@ -92,6 +94,21 @@ app.post('/api/submissions', (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Não foi possível salvar a análise.' });
+  }
+});
+
+app.get('/api/admin/submissions', (req, res) => {
+  const configured = process.env.ADMIN_PASSWORD;
+  if (!configured) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD não configurada' });
+  if (req.get('x-admin-password') !== configured) return res.status(401).json({ ok: false, error: 'Não autorizado' });
+  try {
+    const rows = JSON.parse(fs.readFileSync(dataFile, 'utf8') || '[]');
+    rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    res.set('Cache-Control', 'no-store');
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Não foi possível carregar as análises.' });
   }
 });
 
