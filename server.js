@@ -17,10 +17,33 @@ if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '[]', 'utf8');
 
 app.use(express.json({ limit: '1mb' }));
 
-// Entrega a experiência com pequenos ajustes de interface sem alterar os assets.
+// Entrega a experiência com ajustes de interface aplicados no servidor.
 function renderSite(res) {
   let html = fs.readFileSync(indexFile, 'utf8');
-  html = html.replace('</style>', '.sound{display:none!important}.consent{display:none!important}</style>');
+  const uiFixes = `
+    .sound{display:none!important}
+    .consent{display:none!important}
+    .option,
+    .option:hover,
+    .option:active,
+    .option:focus{
+      background:#fff!important;
+      border-color:var(--line)!important;
+      box-shadow:none!important;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .option:focus-visible{
+      outline:2px solid var(--violet);
+      outline-offset:2px;
+    }
+    @media (hover:hover) and (pointer:fine){
+      .option:hover{
+        border-color:var(--violet)!important;
+        background:var(--violetSoft)!important;
+      }
+    }
+  `;
+  html = html.replace('</style>', `${uiFixes}</style>`);
   html = html.replace(/<label class="consent"><input type="checkbox" id="consent"><span>.*?<\/span><\/label>/s, '');
   html = html.replace("if(!document.getElementById('consent').checked){document.getElementById('waErr').textContent='Marque a autorização para receber contato.';return}", '');
   html = html.replace('Concordo e quero continuar', 'Concordo e quero compartilhar');
