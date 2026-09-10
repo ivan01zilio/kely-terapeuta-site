@@ -23,23 +23,32 @@ function renderSite(res) {
   const uiFixes = `
     .sound{display:none!important}
     .consent{display:none!important}
+
+    /* Todas as alternativas sempre entram neutras, sem aparência de pré-seleção. */
     .option,
     .option:hover,
     .option:active,
-    .option:focus{
-      background:#fff!important;
-      border-color:var(--line)!important;
-      box-shadow:none!important;
-      -webkit-tap-highlight-color:transparent;
-    }
+    .option:focus,
     .option:focus-visible{
-      outline:2px solid var(--violet);
-      outline-offset:2px;
+      appearance:none!important;
+      -webkit-appearance:none!important;
+      background:#fff!important;
+      border:1.5px solid var(--line)!important;
+      color:var(--ink)!important;
+      outline:none!important;
+      box-shadow:none!important;
+      transform:none!important;
+      -webkit-tap-highlight-color:transparent!important;
     }
+
+    /* Remove qualquer foco persistente que o Safari/iPhone possa reaproveitar entre perguntas. */
+    .option::-moz-focus-inner{border:0!important}
+
     @media (hover:hover) and (pointer:fine){
       .option:hover{
-        border-color:var(--violet)!important;
-        background:var(--violetSoft)!important;
+        background:#fff!important;
+        border-color:var(--line)!important;
+        color:var(--ink)!important;
       }
     }
   `;
@@ -47,6 +56,17 @@ function renderSite(res) {
   html = html.replace(/<label class="consent"><input type="checkbox" id="consent"><span>.*?<\/span><\/label>/s, '');
   html = html.replace("if(!document.getElementById('consent').checked){document.getElementById('waErr').textContent='Marque a autorização para receber contato.';return}", '');
   html = html.replace('Concordo e quero continuar', 'Concordo e quero compartilhar');
+
+  // Garante que nenhum botão receba foco visual automático ao trocar de pergunta.
+  html = html.replace(
+    "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{",
+    "document.querySelectorAll('.option').forEach(b=>{b.blur();b.setAttribute('tabindex','-1');b.onclick=()=>{b.blur();"
+  );
+  html = html.replace(
+    "if(state.q===9)return finish();state.q++;renderQ()});const back=document.getElementById('back');",
+    "if(state.q===9)return finish();state.q++;renderQ()}});const back=document.getElementById('back');"
+  );
+
   res.type('html').send(html);
 }
 
