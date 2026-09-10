@@ -24,7 +24,7 @@ function renderSite(res) {
     .sound{display:none!important}
     .consent{display:none!important}
 
-    /* Todas as alternativas sempre entram neutras, sem aparência de pré-seleção. */
+    /* Todas as alternativas entram neutras. */
     .option,
     .option:hover,
     .option:active,
@@ -41,31 +41,27 @@ function renderSite(res) {
       -webkit-tap-highlight-color:transparent!important;
     }
 
-    /* Remove qualquer foco persistente que o Safari/iPhone possa reaproveitar entre perguntas. */
-    .option::-moz-focus-inner{border:0!important}
-
-    @media (hover:hover) and (pointer:fine){
-      .option:hover{
-        background:#fff!important;
-        border-color:var(--line)!important;
-        color:var(--ink)!important;
-      }
+    /* Só a alternativa tocada fica roxa por um instante antes de avançar. */
+    .option.selected,
+    .option.selected:hover,
+    .option.selected:active,
+    .option.selected:focus{
+      background:var(--violetSoft)!important;
+      border-color:var(--violet)!important;
+      color:var(--navy)!important;
+      box-shadow:0 0 0 1px rgba(116,85,184,.08)!important;
     }
+
+    .option::-moz-focus-inner{border:0!important}
   `;
   html = html.replace('</style>', `${uiFixes}</style>`);
   html = html.replace(/<label class="consent"><input type="checkbox" id="consent"><span>.*?<\/span><\/label>/s, '');
   html = html.replace("if(!document.getElementById('consent').checked){document.getElementById('waErr').textContent='Marque a autorização para receber contato.';return}", '');
   html = html.replace('Concordo e quero continuar', 'Concordo e quero compartilhar');
 
-  // Garante que nenhum botão receba foco visual automático ao trocar de pergunta.
-  html = html.replace(
-    "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{",
-    "document.querySelectorAll('.option').forEach(b=>{b.blur();b.setAttribute('tabindex','-1');b.onclick=()=>{b.blur();"
-  );
-  html = html.replace(
-    "if(state.q===9)return finish();state.q++;renderQ()});const back=document.getElementById('back');",
-    "if(state.q===9)return finish();state.q++;renderQ()}});const back=document.getElementById('back');"
-  );
+  const oldHandler = "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{const o=q.options[+b.dataset.i];state.answers[state.q]={label:o[0],score:o[1]};if(state.q===2)return whatsappStep();if(state.q===9)return finish();state.q++;renderQ()});const back=document.getElementById('back');";
+  const newHandler = "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{document.querySelectorAll('.option').forEach(x=>{x.classList.remove('selected');x.disabled=true});b.classList.add('selected');const o=q.options[+b.dataset.i];state.answers[state.q]={label:o[0],score:o[1]};setTimeout(()=>{if(state.q===2)return whatsappStep();if(state.q===9)return finish();state.q++;renderQ()},240)});const back=document.getElementById('back');";
+  html = html.replace(oldHandler, newHandler);
 
   res.type('html').send(html);
 }
