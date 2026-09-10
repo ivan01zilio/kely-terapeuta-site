@@ -17,14 +17,12 @@ if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '[]', 'utf8');
 
 app.use(express.json({ limit: '1mb' }));
 
-// Entrega a experiência com ajustes de interface aplicados no servidor.
 function renderSite(res) {
   let html = fs.readFileSync(indexFile, 'utf8');
   const uiFixes = `
     .sound{display:none!important}
     .consent{display:none!important}
 
-    /* Todas as alternativas entram neutras. */
     .option,
     .option:hover,
     .option:active,
@@ -41,15 +39,16 @@ function renderSite(res) {
       -webkit-tap-highlight-color:transparent!important;
     }
 
-    /* Só a alternativa tocada fica roxa por um instante antes de avançar. */
     .option.selected,
     .option.selected:hover,
     .option.selected:active,
-    .option.selected:focus{
-      background:var(--violetSoft)!important;
+    .option.selected:focus,
+    .option.selected:focus-visible{
+      background:var(--violet)!important;
       border-color:var(--violet)!important;
-      color:var(--navy)!important;
-      box-shadow:0 0 0 1px rgba(116,85,184,.08)!important;
+      color:#fff!important;
+      box-shadow:0 6px 18px rgba(116,85,184,.22)!important;
+      transform:translateY(-1px)!important;
     }
 
     .option::-moz-focus-inner{border:0!important}
@@ -60,7 +59,7 @@ function renderSite(res) {
   html = html.replace('Concordo e quero continuar', 'Concordo e quero compartilhar');
 
   const oldHandler = "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{const o=q.options[+b.dataset.i];state.answers[state.q]={label:o[0],score:o[1]};if(state.q===2)return whatsappStep();if(state.q===9)return finish();state.q++;renderQ()});const back=document.getElementById('back');";
-  const newHandler = "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{document.querySelectorAll('.option').forEach(x=>{x.classList.remove('selected');x.disabled=true});b.classList.add('selected');const o=q.options[+b.dataset.i];state.answers[state.q]={label:o[0],score:o[1]};setTimeout(()=>{if(state.q===2)return whatsappStep();if(state.q===9)return finish();state.q++;renderQ()},240)});const back=document.getElementById('back');";
+  const newHandler = "document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{document.querySelectorAll('.option').forEach(x=>{x.classList.remove('selected');x.disabled=true});b.classList.add('selected');const o=q.options[+b.dataset.i];state.answers[state.q]={label:o[0],score:o[1]};setTimeout(()=>{if(state.q===2)return whatsappStep();if(state.q===9)return finish();state.q++;renderQ()},320)});const back=document.getElementById('back');";
   html = html.replace(oldHandler, newHandler);
 
   res.type('html').send(html);
