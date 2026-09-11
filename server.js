@@ -37,7 +37,33 @@ function writeLocalRows(rows) {
   }
 }
 
-async function sendGoogleSheets(item) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function leadSignature(item = {}) {
+  const answers = Array.isArray(item.answers) ? item.answers : [];
+  const labels = answers.map(a => String(a?.label || '')).join('|');
+  return [
+    String(item.name || '').trim().toLowerCase(),
+    String(item.whatsapp || '').replace(/\D/g, ''),
+    String(item.area || '').trim().toLowerCase(),
+    Number(item.score || 0),
+    labels.toLowerCase()
+  ].join('::');
+}
+
+async function sendGoogleSheets(item, attempts = 3) {
   const webhook = process.env.GOOGLE_SHEETS_WEBHOOK;
   const secret = process.env.GOOGLE_SHEETS_SECRET;
 
@@ -60,26 +86,37 @@ async function sendGoogleSheets(item) {
     area: item.area
   };
 
-  const response = await fetch(webhook, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload),
-    redirect: 'follow'
-  });
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const response = await fetchWithTimeout(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      });
 
-  const text = await response.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch (_) {}
+      const text = await response.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (_) {}
 
-  if (!response.ok || (data && data.ok === false)) {
-    throw new Error(`Google Sheets retornou ${response.status}: ${text.slice(0, 300)}`);
+      if (!response.ok || (data && data.ok === false)) {
+        throw new Error(`Google Sheets retornou ${response.status}: ${text.slice(0, 300)}`);
+      }
+
+      console.log(`Google Sheets: lead salvo com sucesso: ${item.id} (tentativa ${attempt})`);
+      return true;
+    } catch (err) {
+      lastError = err;
+      console.error(`Google Sheets: tentativa ${attempt}/${attempts} falhou para ${item.id}:`, err.message);
+      if (attempt < attempts) await sleep(700 * attempt);
+    }
   }
 
-  console.log('Google Sheets: lead salvo com sucesso:', item.id);
-  return true;
+  throw lastError || new Error('Falha desconhecida ao salvar no Google Sheets');
 }
 
-async function loadGoogleSheetsRows() {
+async function loadGoogleSheetsRows(attempts = 2) {
   const webhook = process.env.GOOGLE_SHEETS_WEBHOOK;
   const secret = process.env.GOOGLE_SHEETS_SECRET;
   if (!webhook || !secret) return null;
@@ -88,16 +125,64 @@ async function loadGoogleSheetsRows() {
   url.searchParams.set('action', 'list');
   url.searchParams.set('secret', secret);
 
-  const response = await fetch(url, { method: 'GET', redirect: 'follow' });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Google Sheets leitura HTTP ${response.status}: ${text.slice(0, 300)}`);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, { method: 'GET', redirect: 'follow' });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`Google Sheets leitura HTTP ${response.status}: ${text.slice(0, 300)}`);
 
-  let data;
-  try { data = JSON.parse(text); } catch (_) { throw new Error('Google Sheets leitura: resposta nao e JSON'); }
+      let data;
+      try { data = JSON.parse(text); } catch (_) { throw new Error('Google Sheets leitura: resposta nao e JSON'); }
 
-  const rows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : null);
-  if (!rows) throw new Error('Google Sheets leitura: formato de resposta invalido');
-  return rows;
+      const rows = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : null);
+      if (!rows) throw new Error('Google Sheets leitura: formato de resposta invalido');
+      return rows;
+    } catch (err) {
+      lastError = err;
+      console.error(`Google Sheets leitura: tentativa ${attempt}/${attempts} falhou:`, err.message);
+      if (attempt < attempts) await sleep(500 * attempt);
+    }
+  }
+
+  throw lastError || new Error('Falha desconhecida ao ler Google Sheets');
+}
+
+async function syncLocalToGoogleSheets() {
+  const localRows = readLocalRows();
+  if (!localRows.length) return { synced: 0, skipped: 0 };
+
+  let sheetRows;
+  try {
+    sheetRows = await loadGoogleSheetsRows();
+  } catch (err) {
+    console.error('Google Sheets: sincronizacao local adiada porque a leitura da planilha falhou:', err.message);
+    return { synced: 0, skipped: localRows.length };
+  }
+
+  if (!sheetRows) return { synced: 0, skipped: localRows.length };
+
+  const existing = new Set(sheetRows.map(leadSignature));
+  let synced = 0;
+  let skipped = 0;
+
+  for (const item of localRows) {
+    const sig = leadSignature(item);
+    if (existing.has(sig)) {
+      skipped++;
+      continue;
+    }
+    try {
+      await sendGoogleSheets(item, 2);
+      existing.add(sig);
+      synced++;
+    } catch (err) {
+      console.error('Google Sheets: nao foi possivel migrar lead local', item.id, err.message);
+    }
+  }
+
+  if (synced) console.log(`Google Sheets: ${synced} lead(s) local(is) migrado(s) para armazenamento persistente.`);
+  return { synced, skipped };
 }
 
 async function sendWhatsAppNotification(item) {
@@ -278,21 +363,22 @@ app.post('/api/submissions', async (req, res) => {
       area: String(body.area).slice(0, 140)
     };
 
+    // Cache local: util apenas como contingencia temporaria. O Google Sheets e o armazenamento persistente principal.
     const rows = readLocalRows();
     rows.push(item);
     const localSaved = writeLocalRows(rows);
 
     let sheetsSaved = false;
     try {
-      sheetsSaved = await sendGoogleSheets(item);
+      sheetsSaved = await sendGoogleSheets(item, 3);
     } catch (err) {
-      console.error('Google Sheets: falha ao salvar lead', err);
+      console.error('Google Sheets: FALHA CRITICA ao persistir lead', item.id, err.message);
     }
 
     sendWhatsAppNotification(item).catch(err => console.error('WhatsApp: falha inesperada', err));
 
-    console.log(`Lead recebido: ${item.id} | local=${localSaved} | sheets=${sheetsSaved}`);
-    res.json({ ok: true, id: item.id, localSaved, sheetsSaved });
+    console.log(`Lead recebido: ${item.id} | cacheLocal=${localSaved} | persistenteSheets=${sheetsSaved}`);
+    res.json({ ok: true, id: item.id, localSaved, sheetsSaved, durableSaved: sheetsSaved });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Não foi possível salvar a análise.' });
@@ -305,25 +391,82 @@ app.get('/api/admin/submissions', async (req, res) => {
   if (req.get('x-admin-password') !== configured) return res.status(401).json({ ok: false, error: 'Não autorizado' });
 
   try {
-    let rows = null;
+    const localRows = readLocalRows();
+    let sheetRows = null;
 
     try {
-      rows = await loadGoogleSheetsRows();
-      if (rows) console.log(`Google Sheets: ${rows.length} leads carregados para o painel.`);
+      sheetRows = await loadGoogleSheetsRows();
+      if (sheetRows) {
+        console.log(`Google Sheets: ${sheetRows.length} leads persistentes carregados para o painel.`);
+        // Tenta migrar para a planilha qualquer registro local que ainda nao esteja persistido.
+        syncLocalToGoogleSheets().catch(err => console.error('Google Sheets: erro na sincronizacao em segundo plano', err));
+      }
     } catch (err) {
-      console.error('Google Sheets: nao foi possivel carregar o painel; usando cache local.', err.message);
+      console.error('Google Sheets: leitura persistente indisponivel; usando apenas cache local nesta requisicao.', err.message);
     }
 
-    if (!rows) rows = readLocalRows();
+    const merged = [];
+    const seen = new Set();
 
-    rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    for (const item of [...(sheetRows || []), ...localRows]) {
+      const sig = leadSignature(item);
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      merged.push(item);
+    }
+
+    merged.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     res.set('Cache-Control', 'no-store');
-    res.json(rows);
+    res.set('X-Storage-Mode', sheetRows ? 'google-sheets+local-cache' : 'local-cache-only');
+    res.json(merged);
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Não foi possível carregar as análises.' });
   }
 });
 
+app.get('/api/admin/storage-status', async (req, res) => {
+  const configured = process.env.ADMIN_PASSWORD;
+  if (!configured) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD não configurada' });
+  if (req.get('x-admin-password') !== configured) return res.status(401).json({ ok: false, error: 'Não autorizado' });
+
+  const localCount = readLocalRows().length;
+  const sheetsConfigured = Boolean(process.env.GOOGLE_SHEETS_WEBHOOK && process.env.GOOGLE_SHEETS_SECRET);
+  let sheetsReachable = false;
+  let sheetsCount = null;
+  let sheetsError = null;
+
+  if (sheetsConfigured) {
+    try {
+      const rows = await loadGoogleSheetsRows(1);
+      sheetsReachable = Array.isArray(rows);
+      sheetsCount = Array.isArray(rows) ? rows.length : null;
+    } catch (err) {
+      sheetsError = err.message;
+    }
+  }
+
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    persistentStorage: sheetsReachable,
+    sheetsConfigured,
+    sheetsReachable,
+    sheetsCount,
+    localCount,
+    sheetsError
+  });
+});
+
 app.get('*', (req, res) => renderSite(res));
-app.listen(PORT, () => console.log(`Kely Terapeuta online na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Kely Terapeuta online na porta ${PORT}`);
+  if (process.env.GOOGLE_SHEETS_WEBHOOK && process.env.GOOGLE_SHEETS_SECRET) {
+    console.log('Google Sheets: armazenamento persistente configurado.');
+    setTimeout(() => {
+      syncLocalToGoogleSheets().catch(err => console.error('Google Sheets: sincronizacao inicial falhou', err));
+    }, 2500);
+  } else {
+    console.warn('Google Sheets: armazenamento persistente AINDA NAO configurado.');
+  }
+});
